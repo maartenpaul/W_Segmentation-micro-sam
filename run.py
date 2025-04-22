@@ -1,160 +1,154 @@
-# -*- coding: utf-8 -*-
-
-# * Copyright (c) 2009-2018. Authors: see NOTICE file.
-# *
-# * Licensed under the Apache License, Version 2.0 (the "License");
-# * you may not use this file except in compliance with the License.
-# * You may obtain a copy of the License at
-# *
-# *      http://www.apache.org/licenses/LICENSE-2.0
-# *
-# * Unless required by applicable law or agreed to in writing, software
-# * distributed under the License is distributed on an "AS IS" BASIS,
-# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# * See the License for the specific language governing permissions and
-# * limitations under the License.
-
-
 import sys
-import numpy as np
 import os
-import imageio
-from tifffile import imread, imwrite
-import skimage
-import skimage.color
-from csbdeep.utils import normalize
-from stardist import random_label_cmap
-from stardist.models import StarDist2D
+import shutil
+import subprocess
+import time
+import numpy as np
+import tifffile # Keep for potential metadata or checks if needed
+
+# Cytomine / BIAFLOWS related imports
 from cytomine.models import Job
-from biaflows import CLASS_OBJSEG
-from biaflows.helpers import BiaflowsJob, prepare_data, upload_data, upload_metrics
+from biaflows import CLASS_OBJSEG # Assuming Object Segmentation problem
+from biaflows.helpers import BiaflowsJob, prepare_data, upload_data, upload_metrics, get_discipline
 
-def run_startdist(bj,models,img):
-    fluo = True
-    n_channel = 3 if img.ndim == 3 else 1
-
-    if n_channel == 3:
-        if np.array_equal(img[:,:,0], img[:,:,1]) and np.array_equal(img[:,:,0], img[:,:,2]):
-            img = skimage.color.rgb2gray(img)
-        else:
-            fluo = False
-    axis_norm = (0,1)
-    img = normalize(img, bj.parameters.stardist_norm_perc_low, bj.parameters.stardist_norm_perc_high,axis=axis_norm)
-    if fluo:
-        labels, details = models[0].predict_instances(img,
-                                                       prob_thresh=bj.parameters.stardist_prob_t,
-                                                       nms_thresh=bj.parameters.stardist_nms_t)
-    else:
-        labels, details = models[1].predict_instances(img,
-                                                     prob_thresh=bj.parameters.stardist_prob_t,
-                                                     nms_thresh=bj.parameters.stardist_nms_t)
-    labels = labels.astype(np.uint16)
-    bj.job.update(status=Job.RUNNING, progress=30, statusComment="Maxiumum value in labels: {}".format(np.max(labels)))
-    return labels
+# Define the name of the Conda environment for micro-sam
+MICROSAM_ENV_NAME = "microsam_env"
 
 def main(argv):
-    base_path = "{}".format(os.getenv("HOME"))
-    problem_cls = CLASS_OBJSEG
-
+    base_path = "{}".format(os.getenv("HOME")) # Mandatory for Singularity
     with BiaflowsJob.from_cli(argv) as bj:
-        bj.job.update(status=Job.RUNNING, progress=0, statusComment="Initialization...")
+        # Set problem class, adjust if needed
+        problem_cls = get_discipline(bj, default=CLASS_OBJSEG)
+
+        bj.job.update(status=Job.RUNNING, progress=0, statusComment="Initialisation...")
 
         # 1. Prepare data for workflow
-        in_imgs, gt_imgs, in_path, gt_path, out_path, tmp_path = prepare_data(problem_cls, bj, is_2d=False, **bj.flags)
-        list_imgs = [image.filepath for image in in_imgs]
-        nuc_channel = bj.parameters.nuc_channel
-        channels = bj.parameters.channels
-        time_series = bj.parameters.time_series
-        z_slices = bj.parameters.z_slices
+        # is_2d=None allows handling both 2D and 3D if micro_sam supports it via ndim
+        in_imgs, gt_imgs, in_path, gt_path, out_path, tmp_path = prepare_data(problem_cls, bj, is_2d=None, **bj.flags)
 
-        # 2. Run Stardist model on input images
-        bj.job.update(progress=25, statusComment="Launching workflow...")
-        bj.job.update(progress=26, statusComment="Processing images with channels is {}, time_series is {}, z_slices is {}".format(channels, time_series, z_slices))
+        # Make tmp_path unique if running multiple instances concurrently
+        # (Consider if tmp_path from prepare_data is already sufficiently unique)
+        unique_tmp_suffix = f"_{int(time.time() * 1000)}"
+        tmp_path = os.path.join(tmp_path, f"microsam_run{unique_tmp_suffix}")
+        os.makedirs(tmp_path, exist_ok=True)
 
-        #Loading pre-trained Stardist model
-        np.random.seed(17)
+        # Define paths for micro_sam within the temporary directory
+        # input files will be linked/copied here if needed, or used directly from in_path
+        ms_out_path = os.path.join(tmp_path, "ms_output") # Dir for individual outputs
+        ms_emb_path = os.path.join(tmp_path, "ms_embeddings") # Dir for embeddings cache
+        os.makedirs(ms_out_path, exist_ok=True)
+        os.makedirs(ms_emb_path, exist_ok=True)
 
-        lbl_cmap = random_label_cmap()
-        model_fluo = StarDist2D(None, name='2D_versatile_fluo', basedir='/models/')
-        model_he = StarDist2D(None, name='2D_versatile_he', basedir='/models/')
-        models = [model_fluo, model_he]
-        # handle all possible input cases (x,y), (c,z,x,y), (c,t,x,y), (z,t,x,y), (z,x,y),(c,x,y),(t,x,y),(c,z,t,x,y)
-        bj.job.update(progress=30, statusComment="length of list_imgs: {}".format(len(list_imgs)))
-        for img_path in list_imgs:
-            #check if image is 2D or 3D
-            img = imread(img_path)
-            dims = img.shape
-            labels = np.zeros_like(img)
-            bj.job.update(progress=30, statusComment="Number of dimensions in image: {}".format(len(dims)))
-            bj.job.update(progress=30, statusComment="shape of full image "+ str(img.shape))
+        # 2. Run image analysis workflow (micro-sam)
+        bj.job.update(progress=5, statusComment="Launching Micro-SAM segmentation...")
 
-            if len(dims) == 5:
-                _, nz, nt = img.shape[:3]
-                for z, t in np.ndindex(nz, nt):
-                    # Process single xy slice
-                    processed_slice = run_startdist(bj,models,img[nuc_channel,z,t])
-                    # Store processed slice
-                    labels[nuc_channel,z,t] = processed_slice
-                metadata = {'axes': 'CZTYX'}
-            elif len(dims) == 4:
-                if channels and z_slices:
-                    _, nz = img.shape[:2]
-                    bj.job.update(progress=30, statusComment="nz is "+ str(nz))
-                    for z in range(nz):
-                        processed_slice = run_startdist(bj,models,img[nuc_channel,z])
-                        # Store processed slice
-                        labels[nuc_channel,z] = processed_slice
-                    metadata = {'axes': 'CZYX'}                    
-                elif channels and time_series:
-                    _, nt = img.shape[:2]
-                    for t in range(nt):
-                        processed_slice = run_startdist(bj,models,img[nuc_channel,t])
-                        # Store processed slice
-                        labels[nuc_channel,t] = processed_slice
-                    metadata = {'axes': 'CTYX'}                    
-                elif z_slices and time_series:
-                    nz , nt = img.shape[:2]
-                    for z, t in np.ndindex(nz, nt):
-                        # Process single xy slice
-                        processed_slice = run_startdist(bj,models,img[z,t])
-                        # Store processed slice
-                        labels[z,t] = processed_slice
-                    metadata = {'axes': 'ZTYX'}                    
-            elif len(dims) == 3:
-                if z_slices:
-                    nz = img.shape[0]
-                    for z in range(nz):
-                        processed_slice = run_startdist(bj,models,img[z])
-                        # Store processed slice
-                        labels[z] = processed_slice
-                    metadata = {'axes': 'ZYX'}                      
-                elif time_series:
-                    nt = img.shape[0]
-                    for t in np.ndindex(nt):
-                        processed_slice = run_startdist(bj,models,img[t])
-                        # Store processed slice
-                        labels[t] = processed_slice
-                    metadata = {'axes': 'TYX'}                      
-                elif channels:
-                    labels[nuc_channel] = run_startdist(bj,models,img[nuc_channel])
-                    metadata = {'axes': 'CYX'}
-            elif len(dims) == 2:
-                labels = run_startdist(bj,models,img)
-                metadata = {'axes': 'YX'}
-            bj.job.update(progress=90, statusComment="shape of labels: "+ str(labels.shape))
-            imwrite(os.path.join(out_path,os.path.basename(img_path)), labels,ome=True,metadata=metadata,photometric='minisblack')
+        # --- Parameters for micro_sam ---
+        # Mandatory / Core Parameters (Add these to your descriptor.json)
+        model_type = bj.parameters.model_type # e.g., "vit_b", "vit_l", "vit_h" (or path to custom?)
+        segmentation_mode = bj.parameters.segmentation_mode # "amg" or "ais"
+
+        # Optional Parameters (Add relevant ones to descriptor.json with defaults)
+        # Using getattr with default values
+        ndim = getattr(bj.parameters, 'ndim', None) # Let micro_sam infer if None, or set (e.g., 2 for RGB)
+        tile_shape_str = getattr(bj.parameters, 'tile_shape', None) # e.g., "512,512"
+        halo_str = getattr(bj.parameters, 'halo', None) # e.g., "64,64"
+        pred_iou_thresh = getattr(bj.parameters, 'pred_iou_thresh', None) # e.g., 0.88 for AMG
+        stability_score_thresh = getattr(bj.parameters, 'stability_score_thresh', None) # e.g., 0.95 for AMG
+        # Add other relevant generate_kwargs from micro_sam docs as needed (e.g., for AIS mode)
+
+        # --- Build and Run Command for each image ---
+        total_images = len(in_imgs)
+        for i, bfimg in enumerate(in_imgs):
+            progress = 5 + int(60 * (i / total_images))
+            bj.job.update(progress=progress, statusComment=f"Processing image {i+1}/{total_images}: {bfimg.filename}")
+
+            in_file_path = os.path.join(in_path, bfimg.filename)
+            # Define where micro_sam should write the output mask for this image
+            out_file_path = os.path.join(ms_out_path, bfimg.filename)
+
+            # Base command - Uses 'conda run' to execute in the specified environment
+            cmd = [
+                "conda", "run", "-n", MICROSAM_ENV_NAME,
+                "micro_sam.automatic_segmentation",
+                "--input_path", in_file_path,
+                "--output_path", out_file_path,
+                "--embedding_path", ms_emb_path, # Use shared embedding cache
+                "--model_type", model_type,
+                "--mode", segmentation_mode
+            ]
+
+            # Add optional arguments if provided
+            if ndim is not None:
+                cmd.extend(["--ndim", str(ndim)])
+            if tile_shape_str: # Assuming format "y,x" like "512,512"
+                cmd.extend(["--tile_shape", tile_shape_str])
+            if halo_str: # Assuming format "y,x" like "64,64"
+                cmd.extend(["--halo", halo_str])
+
+            # Add generate_kwargs if provided
+            if pred_iou_thresh is not None:
+                 cmd.extend(["--pred_iou_thresh", str(pred_iou_thresh)])
+            if stability_score_thresh is not None:
+                 cmd.extend(["--stability_score_thresh", str(stability_score_thresh)])
+            # Add other generate_kwargs here...
+
+            print(f"Running command: {' '.join(cmd)}")
+
+            # Execute the command
+            try:
+                # Set run in shell=False for security and better argument handling
+                # check=True will raise CalledProcessError if micro_sam fails
+                subprocess.run(cmd, check=True, text=True, capture_output=True)
+                 # Can check stdout/stderr from result if needed:
+                 # result = subprocess.run(...)
+                 # print("stdout:", result.stdout)
+                 # print("stderr:", result.stderr)
+
+                # Copy the generated mask to the final BIAFLOWS output directory
+                # Ensure the filename matches the original input filename
+                final_dest_path = os.path.join(out_path, bfimg.filename)
+                shutil.copyfile(out_file_path, final_dest_path)
+
+            except subprocess.CalledProcessError as e:
+                # Log error and terminate
+                error_message = f"Micro-SAM execution failed for {bfimg.filename} with code {e.returncode}."
+                error_detail = f"Stderr: {e.stderr}\nStdout: {e.stdout}"
+                print(error_message)
+                print(error_detail)
+                bj.job.update(status=Job.FAILED, progress=progress,
+                              statusComment=f"{error_message}\n{error_detail[:500]}") # Limit length
+                # Optional: clean up tmp_path before exiting on error
+                # shutil.rmtree(tmp_path, ignore_errors=True)
+                sys.exit(1) # Stop processing further images
+            except FileNotFoundError:
+                 # Handle case where conda or python command itself is not found
+                 error_message = f"Error: Command 'conda run' or underlying python/script not found. Is the '{MICROSAM_ENV_NAME}' Conda environment set up correctly in the Docker image?"
+                 print(error_message)
+                 bj.job.update(status=Job.FAILED, progress=progress, statusComment=error_message)
+                 sys.exit(1)
+
 
         # 3. Upload data to BIAFLOWS
+        bj.job.update(progress=70, statusComment="Uploading segmentation results...")
         upload_data(problem_cls, bj, in_imgs, out_path, **bj.flags, monitor_params={
-            "start": 60, "end": 90, "period": 0.1,
+            "start": 70, "end": 90, "period": 0.1,
             "prefix": "Extracting and uploading polygons from masks"})
-        
+
         # 4. Compute and upload metrics
         bj.job.update(progress=90, statusComment="Computing and uploading metrics...")
-        upload_metrics(problem_cls, bj, in_imgs, gt_path, out_path, tmp_path, **bj.flags)
+        # Make sure gt_path is valid if metrics are needed
+        if gt_imgs:
+             upload_metrics(problem_cls, bj, in_imgs, gt_path, out_path, tmp_path, **bj.flags)
+        else:
+             print("No ground truth images found, skipping metrics calculation.")
+             bj.job.update(progress=95, statusComment="Skipped metrics calculation (no GT).")
+
 
         # 5. Pipeline finished
+        # Clean up temporary directory
+        shutil.rmtree(tmp_path, ignore_errors=True)
         bj.job.update(progress=100, status=Job.TERMINATED, status_comment="Finished.")
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
