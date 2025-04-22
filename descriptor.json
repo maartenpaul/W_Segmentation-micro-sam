@@ -58,12 +58,11 @@
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Micro-SAM Model Type",
-            "description": "Specify the Segment Anything model variant (e.g., vit_t, vit_b, vit_l, vit_h). Check micro-sam documentation for available models.",
+            "description": "Specify the Segment Anything model variant (e.g., vit_t, vit_b, vit_l, vit_h, vit_b_lm or path). Check micro-sam documentation for available/supported models.",
             "default-value": "vit_b",
             "set-by-server": false,
             "optional": false,
-            "type": "String",
-            "value-choices": ["vit_t", "vit_b", "vit_l", "vit_h"]
+            "type": "String"
         },
         {
             "id": "segmentation_mode",
@@ -74,8 +73,7 @@
             "default-value": "amg",
             "set-by-server": false,
             "optional": false,
-            "type": "String",
-            "value-choices": ["amg", "ais"]
+            "type": "String"
         },
         {
             "id": "ndim",
@@ -87,7 +85,7 @@
             "optional": true,
             "type": "Number"
         },
-         {
+        {
             "id": "tile_shape",
             "value-key": "@ID",
             "command-line-flag": "--@id",
@@ -113,13 +111,13 @@
             "command-line-flag": "--@id",
             "name": "Prediction IoU Threshold (AMG/AIS)",
             "description": "Postprocessing: IoU threshold for filtering predicted masks. Default depends on mode/model.",
-             "default-value": 0.88,
+            "default-value": 0.88,
             "set-by-server": false,
             "optional": true,
             "type": "Number"
         },
         {
-             "id": "stability_score_thresh",
+            "id": "stability_score_thresh",
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Stability Score Threshold (AMG/AIS)",
