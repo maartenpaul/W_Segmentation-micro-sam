@@ -6,7 +6,7 @@
         "type": "singularity"
     },
     "schema-version": "cytomine-0.1",
-    "command-line": "python /app/micro_sam_wrapper.py [CYTOMINE_FLAGS] [PARAMS]",
+    "command-line": "python /app/run.py [CYTOMINE_FLAGS] [PARAMS]",
     "inputs": [
         {
             "id": "cytomine_host",
@@ -59,7 +59,7 @@
             "command-line-flag": "--@id",
             "name": "Micro-SAM Model Type",
             "description": "Specify the Segment Anything model variant (e.g., vit_t, vit_b, vit_l, vit_h, vit_b_lm or path). Check micro-sam documentation for available/supported models.",
-            "default-value": "vit_b",
+            "default-value": "vit_b_lm",
             "set-by-server": false,
             "optional": false,
             "type": "String"
@@ -70,7 +70,7 @@
             "command-line-flag": "--@id",
             "name": "Segmentation Mode",
             "description": "Select the automatic segmentation mode: 'amg' (Automatic Mask Generator) or 'ais' (requires AIS-compatible model).",
-            "default-value": "amg",
+            "default-value": "ais",
             "set-by-server": false,
             "optional": false,
             "type": "String"
