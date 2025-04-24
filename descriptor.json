@@ -81,6 +81,7 @@
             "command-line-flag": "--@id",
             "name": "Input Dimensionality (ndim)",
             "description": "Specify input data dimensionality (e.g., 2 for 2D/RGB, 3 for 3D). Leave empty to let micro-sam infer (may fail for RGB).",
+            "default-value": 2,
             "set-by-server": false,
             "optional": true,
             "type": "Number"
@@ -91,6 +92,7 @@
             "command-line-flag": "--@id",
             "name": "Tile Shape (optional)",
             "description": "Shape of tiles for tiled prediction (e.g., '512,512'). If empty, no tiling is used.",
+            "default-value": "512,512",
             "set-by-server": false,
             "optional": true,
             "type": "String"
@@ -101,6 +103,7 @@
             "command-line-flag": "--@id",
             "name": "Halo Size (optional)",
             "description": "Overlap between tiles for tiled prediction (e.g., '64,64'). Requires tile_shape.",
+            "default-value": "64,64",
             "set-by-server": false,
             "optional": true,
             "type": "String"
