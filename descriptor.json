@@ -97,7 +97,8 @@
             "optional": true,
             "type": "String"
         },
-        {            "id": "halo",
+        {
+            "id": "halo",
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Halo Size (optional)",
@@ -125,6 +126,39 @@
             "name": "Batch Size",
             "description": "Number of tiles/planes to process in parallel during embedding computation.",
             "default-value": 1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "time_series",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Process time series",
+            "description": "Process specific time point (start at 0), -1 to process all time points",
+            "default-value": -1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "z_slices",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Process z slices",
+            "description": "Process specific z-slice (start at 0), -1 to process all z-slices",
+            "default-value": -1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "scale_factor",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Scale factor",
+            "description": "Scale the input image by this factor for processing. Values <1 for large nuclei, >1 for small nuclei, 1.0 for no scaling.",
+            "default-value": 1.0,
             "set-by-server": false,
             "optional": true,
             "type": "Number"

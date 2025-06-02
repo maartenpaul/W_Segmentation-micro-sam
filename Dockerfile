@@ -67,11 +67,7 @@ RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
 RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
         git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2
 
-RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
-        imageio==2.9.0 \
-        numpy==1.19.4 \
-        numba==0.50.1 \
-        cellpose==0.6.1
+
 
 # (Optional BIAFLOWS utilities binaries install)
 
