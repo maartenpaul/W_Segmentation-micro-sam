@@ -13,7 +13,7 @@ ENV LC_ALL=C.UTF-8
 ENV PATH=/opt/conda/bin:$PATH
 
 # >>> ADDED: Define default micro-sam cache directory <<<
-ENV MICROSAM_CACHEDIR=/opt/microsam_cache
+ENV MICROSAM_CACHEDIR=/tmp/microsam_cache
 
 # Install base dependencies and cleanup
 RUN apt-get update && \
