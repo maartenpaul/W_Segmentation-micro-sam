@@ -13,7 +13,7 @@ ENV LC_ALL=C.UTF-8
 ENV PATH=/opt/conda/bin:$PATH
 
 # >>> ADDED: Define default micro-sam cache directory <<<
-ENV MICROSAM_CACHEDIR=/opt/microsam_cache
+ENV MICROSAM_CACHEDIR=/tmp/microsam_cache
 
 # Install base dependencies and cleanup
 RUN apt-get update && \
@@ -67,7 +67,11 @@ RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
 RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
         git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2
 
-
+RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
+        imageio==2.9.0 \
+        numpy==1.19.4 \
+        numba==0.50.1 \
+        cellpose==0.6.1
 
 # (Optional BIAFLOWS utilities binaries install)
 
