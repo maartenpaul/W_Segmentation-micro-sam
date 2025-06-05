@@ -6,7 +6,7 @@
         "type": "singularity"
     },
     "schema-version": "cytomine-0.1",
-    "command-line": "python /app/micro_sam_wrapper.py [CYTOMINE_FLAGS] [PARAMS]",
+    "command-line": "python /app/run.py [CYTOMINE_FLAGS] [PARAMS]",
     "inputs": [
         {
             "id": "cytomine_host",
@@ -59,7 +59,7 @@
             "command-line-flag": "--@id",
             "name": "Micro-SAM Model Type",
             "description": "Specify the Segment Anything model variant (e.g., vit_t, vit_b, vit_l, vit_h, vit_b_lm or path). Check micro-sam documentation for available/supported models.",
-            "default-value": "vit_b",
+            "default-value": "vit_b_lm",
             "set-by-server": false,
             "optional": false,
             "type": "String"
@@ -70,7 +70,7 @@
             "command-line-flag": "--@id",
             "name": "Segmentation Mode",
             "description": "Select the automatic segmentation mode: 'amg' (Automatic Mask Generator) or 'ais' (requires AIS-compatible model).",
-            "default-value": "amg",
+            "default-value": "ais",
             "set-by-server": false,
             "optional": false,
             "type": "String"
@@ -81,6 +81,7 @@
             "command-line-flag": "--@id",
             "name": "Input Dimensionality (ndim)",
             "description": "Specify input data dimensionality (e.g., 2 for 2D/RGB, 3 for 3D). Leave empty to let micro-sam infer (may fail for RGB).",
+            "default-value": 2,
             "set-by-server": false,
             "optional": true,
             "type": "Number"
@@ -90,7 +91,8 @@
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Tile Shape (optional)",
-            "description": "Shape of tiles for tiled prediction (e.g., '512,512'). If empty, no tiling is used.",
+            "description": "Shape of tiles for tiled prediction (e.g., '[512,512]'). If empty, no tiling is used.",
+            "default-value": "",
             "set-by-server": false,
             "optional": true,
             "type": "String"
@@ -100,29 +102,63 @@
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Halo Size (optional)",
-            "description": "Overlap between tiles for tiled prediction (e.g., '64,64'). Requires tile_shape.",
+            "description": "Overlap between tiles for tiled prediction (e.g., '[64,64]'). Requires tile_shape.",
+            "default-value": "",
             "set-by-server": false,
             "optional": true,
             "type": "String"
         },
         {
-            "id": "pred_iou_thresh",
+            "id": "channel",
             "value-key": "@ID",
             "command-line-flag": "--@id",
-            "name": "Prediction IoU Threshold (AMG/AIS)",
-            "description": "Postprocessing: IoU threshold for filtering predicted masks. Default depends on mode/model.",
-            "default-value": 0.88,
+            "name": "Channel to Segment",
+            "description": "Choose specific channel to segment (start at 0), leave empty to use all channels. Similar to CellPose's nuc_channel.",
+            "default-value": 0,
             "set-by-server": false,
             "optional": true,
             "type": "Number"
         },
         {
-            "id": "stability_score_thresh",
+            "id": "batch_size",
             "value-key": "@ID",
             "command-line-flag": "--@id",
-            "name": "Stability Score Threshold (AMG/AIS)",
-            "description": "Postprocessing: Stability score threshold for filtering predicted masks. Default depends on mode/model.",
-            "default-value": 0.95,
+            "name": "Batch Size",
+            "description": "Number of tiles/planes to process in parallel during embedding computation.",
+            "default-value": 1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "time_series",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Process time series",
+            "description": "Process specific time point (start at 0), -1 to process all time points",
+            "default-value": -1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "z_slices",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Process z slices",
+            "description": "Process specific z-slice (start at 0), -1 to process all z-slices",
+            "default-value": -1,
+            "set-by-server": false,
+            "optional": true,
+            "type": "Number"
+        },
+        {
+            "id": "scale_factor",
+            "value-key": "@ID",
+            "command-line-flag": "--@id",
+            "name": "Scale factor",
+            "description": "Scale the input image by this factor for processing. Values <1 for large nuclei, >1 for small nuclei, 1.0 for no scaling.",
+            "default-value": 1,
             "set-by-server": false,
             "optional": true,
             "type": "Number"
