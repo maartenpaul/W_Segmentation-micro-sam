@@ -13,7 +13,7 @@ ENV LC_ALL=C.UTF-8
 ENV PATH=/opt/conda/bin:$PATH
 
 # >>> ADDED: Define default micro-sam cache directory <<<
-ENV MICROSAM_CACHEDIR=/tmp/microsam_cache
+ENV MICROSAM_CACHEDIR=/tmp/models/microsam_cache
 
 # Install base dependencies and cleanup
 RUN apt-get update && \
@@ -89,7 +89,7 @@ RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
 # ------------------------------------------------------------------------------
 # (Micro-sam environment creation steps remain the same)
 ENV MICROSAM_ENV_NAME=microsam_env
-RUN conda create -n $MICROSAM_ENV_NAME -c conda-forge micro_sam -y
+RUN conda create -n $MICROSAM_ENV_NAME -c conda-forge micro_sam=1.5.0 -y
 # OR explicit CUDA version if needed:
 # RUN conda create -n $MICROSAM_ENV_NAME -c conda-forge micro_sam "pytorch=*=*cuda11.8*" -y
 
