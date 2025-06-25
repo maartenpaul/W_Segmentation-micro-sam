@@ -10,8 +10,9 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
+ENV PATH=/opt/conda/bin:$PATH 
 
-# >>> ADDED: Define default micro-sam cache directory <<<
+# Define default micro-sam cache directory
 ENV MICROSAM_CACHEDIR=/tmp/models/microsam_cache
 
 # Install base dependencies and cleanup
@@ -31,8 +32,7 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# >>> ADDED: Create the default cache directory <<<
-# Ensure the default cache directory exists within the container
+# Create the default cache directory
 RUN mkdir -p ${MICROSAM_CACHEDIR} && chmod 777 ${MICROSAM_CACHEDIR}
 
 # ------------------------------------------------------------------------------
@@ -43,16 +43,11 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     rm ~/miniconda.sh && \
     /opt/conda/bin/conda clean -a -y && \
     # The symlink below makes conda.sh discoverable by shell startup scripts
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh
+    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    # Initialize conda for bash - crucial for 'conda run' later
+    /opt/conda/bin/conda init bash
 
-# IMPORTANT: Initialize conda for bash explicitly here.
-# This sets up the shell functions (like 'conda activate' and 'conda run')
-# within the Docker image's filesystem, making them available in a shell
-# that sources conda.sh (which our entrypoint will do).
-RUN /opt/conda/bin/conda init bash
-
-# Configure the default shell for subsequent RUN instructions.
-# This ensures that subsequent RUN commands use bash with conda initialized.
+# Make conda available in RUN instructions using the initialized shell
 SHELL ["/bin/bash", "--login", "-c"]
 
 # Update conda
@@ -64,7 +59,6 @@ RUN conda update -n base -c defaults conda --yes
 ENV CYTOMINE_ENV_NAME=cytomine_py37
 RUN conda create -n $CYTOMINE_ENV_NAME python=3.7 -y
 
-# Use 'conda run -n <env_name>' for installing packages into specific environments
 RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
     git+https://github.com/cytomine-uliege/Cytomine-python-client.git@v2.7.3
 
@@ -95,20 +89,12 @@ WORKDIR /app
 COPY run.py /app/run.py
 COPY descriptor.json /app/descriptor.json
 
-# Define the entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# This is the simplified ENTRYPOINT:
+# It sources conda.sh, activates your Cytomine environment, and then runs run.py
+# The "$@" ensures any arguments you pass to `docker run` are sent to run.py
+ENTRYPOINT ["bash", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate cytomine_py37 && exec python /app/run.py \"$@\""]
 
-# Set the ENTRYPOINT to your custom script.
-# This script will handle activating the correct Conda environment
-# and then executing the main application script (run.py) or any other command.
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
-# Set the *default* Conda environment to activate when the container starts
-# without specific instructions (e.g., for `singularity run` or `singularity shell`).
-# This variable will be read by entrypoint.sh.
-ENV DEFAULT_CONDA_ENV=$CYTOMINE_ENV_NAME
-
-# Set a default command to run if no arguments are passed to the container.
-# This will be passed to your entrypoint.sh.
-CMD ["/app/run.py"]
+# Set a default command if no arguments are provided to `docker run`.
+# If you run `docker run your_image`, it will implicitly pass "" as "$@" to the ENTRYPOINT.
+# If you provide args like `docker run your_image --local`, those args become "$@".
+CMD []
