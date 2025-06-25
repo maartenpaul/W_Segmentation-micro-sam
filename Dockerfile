@@ -10,7 +10,6 @@ FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
-ENV PATH=/opt/conda/bin:$PATH
 
 # >>> ADDED: Define default micro-sam cache directory <<<
 ENV MICROSAM_CACHEDIR=/tmp/models/microsam_cache
@@ -18,17 +17,17 @@ ENV MICROSAM_CACHEDIR=/tmp/models/microsam_cache
 # Install base dependencies and cleanup
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        wget \
-        git \
-        bzip2 \
-        ca-certificates \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
-        libgeos-dev \
-        libgl1-mesa-dev \
-        build-essential \
+    wget \
+    git \
+    bzip2 \
+    ca-certificates \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgeos-dev \
+    libgl1-mesa-dev \
+    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -39,16 +38,21 @@ RUN mkdir -p ${MICROSAM_CACHEDIR} && chmod 777 ${MICROSAM_CACHEDIR}
 # ------------------------------------------------------------------------------
 # Install Miniconda
 # ------------------------------------------------------------------------------
-# (Miniconda installation steps remain the same)
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
     /bin/bash ~/miniconda.sh -b -p /opt/conda && \
     rm ~/miniconda.sh && \
     /opt/conda/bin/conda clean -a -y && \
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    conda init bash # Initialize conda for the SHELL
+    # The symlink below makes conda.sh discoverable by shell startup scripts
+    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh
 
-# Make conda available in RUN instructions using the initialized shell
+# IMPORTANT: Initialize conda for bash explicitly here.
+# This sets up the shell functions (like 'conda activate' and 'conda run')
+# within the Docker image's filesystem, making them available in a shell
+# that sources conda.sh (which our entrypoint will do).
+RUN /opt/conda/bin/conda init bash
+
+# Configure the default shell for subsequent RUN instructions.
+# This ensures that subsequent RUN commands use bash with conda initialized.
 SHELL ["/bin/bash", "--login", "-c"]
 
 # Update conda
@@ -57,37 +61,25 @@ RUN conda update -n base -c defaults conda --yes
 # ------------------------------------------------------------------------------
 # Create Cytomine environment (Python 3.7)
 # ------------------------------------------------------------------------------
-# (Cytomine environment creation steps remain the same)
 ENV CYTOMINE_ENV_NAME=cytomine_py37
 RUN conda create -n $CYTOMINE_ENV_NAME python=3.7 -y
 
+# Use 'conda run -n <env_name>' for installing packages into specific environments
 RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
-        git+https://github.com/cytomine-uliege/Cytomine-python-client.git@v2.7.3
-
-RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
-        git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2
+    git+https://github.com/cytomine-uliege/Cytomine-python-client.git@v2.7.3
 
 RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
-        imageio==2.9.0 \
-        numpy==1.19.4 \
-        numba==0.50.1 \
-        cellpose==0.6.1
+    git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2
 
-# (Optional BIAFLOWS utilities binaries install)
-
-# >>> REMOVED/COMMENTED OUT: Cellpose model downloads <<<
-# We are focusing on externalizing the micro-sam cache,
-# but you might apply a similar strategy for cellpose if needed.
-# Let's remove these downloads to avoid confusion with the micro-sam cache strategy.
-# RUN mkdir -p /root/.cellpose/models && \
-#     cd /root/.cellpose/models && \
-#     wget ... (all cellpose model downloads removed for this example)
-# WORKDIR /
+RUN conda run -n $CYTOMINE_ENV_NAME pip install --no-cache-dir \
+    imageio==2.9.0 \
+    numpy==1.19.4 \
+    numba==0.50.1 \
+    cellpose==0.6.1
 
 # ------------------------------------------------------------------------------
 # Create micro_sam environment
 # ------------------------------------------------------------------------------
-# (Micro-sam environment creation steps remain the same)
 ENV MICROSAM_ENV_NAME=microsam_env
 RUN conda create -n $MICROSAM_ENV_NAME -c conda-forge micro_sam=1.5.0 -y
 # OR explicit CUDA version if needed:
@@ -100,9 +92,23 @@ RUN conda clean -a -y
 # Application Code & Entrypoint
 # ------------------------------------------------------------------------------
 WORKDIR /app
-# >>> Ensure you are copying the correct wrapper script <<<
 COPY run.py /app/run.py
 COPY descriptor.json /app/descriptor.json
 
-# >>> Ensure Entrypoint points to the correct script <<<
-ENTRYPOINT ["/opt/conda/envs/cytomine_py37/bin/python", "/app/run.py"]
+# Define the entrypoint script
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Set the ENTRYPOINT to your custom script.
+# This script will handle activating the correct Conda environment
+# and then executing the main application script (run.py) or any other command.
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Set the *default* Conda environment to activate when the container starts
+# without specific instructions (e.g., for `singularity run` or `singularity shell`).
+# This variable will be read by entrypoint.sh.
+ENV DEFAULT_CONDA_ENV=$CYTOMINE_ENV_NAME
+
+# Set a default command to run if no arguments are passed to the container.
+# This will be passed to your entrypoint.sh.
+CMD ["/app/run.py"]

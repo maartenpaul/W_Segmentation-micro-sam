@@ -113,7 +113,7 @@
             "value-key": "@ID",
             "command-line-flag": "--@id",
             "name": "Channel to Segment",
-            "description": "Choose specific channel to segment (start at 0), leave empty to use all channels. Similar to CellPose's nuc_channel.",
+            "description": "Choose specific channel to segment (start at 0), leave empty to use all channel.",
             "default-value": 0,
             "set-by-server": false,
             "optional": true,
